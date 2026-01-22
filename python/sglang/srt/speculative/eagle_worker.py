@@ -3,7 +3,6 @@ import time
 from typing import List, Optional, Tuple
 
 import torch
-
 from sglang.srt.distributed import get_tp_group
 from sglang.srt.hardware_backend.npu.graph_runner.eagle_draft_npu_graph_runner import (
     EAGLEDraftNpuGraphRunner,
@@ -1023,20 +1022,40 @@ class EAGLEWorker(TpModelWorker):
 
     def update_weights_from_tensor(self, recv_req: UpdateWeightsFromTensorReqInput):
         monkey_patch_torch_reductions()
-        named_tensors = MultiprocessingSerializer.deserialize(
+
+        logger.info(f"hzg:sglang EAGLE_WORKER update_weights_from_tensor")
+
+        # Deserialize separately for each worker to avoid data mutation
+        # when using ThreadPoolExecutor in load_weights()
+        logger.info(f"hzg:sglang EAGLE_WORKER deserialize draft_named_tensors, tp_rank={self.tp_rank}")
+        draft_named_tensors = MultiprocessingSerializer.deserialize(
             recv_req.serialized_named_tensors[self.tp_rank]
         )
+        logger.info(f"hzg:sglang EAGLE_WORKER call draft model_runner.update_weights_from_tensor, tp_rank={self.tp_rank}")
         success, message = self.model_runner.update_weights_from_tensor(
-            named_tensors=named_tensors,
+            named_tensors=draft_named_tensors,
             load_format=recv_req.load_format,
         )
+        logger.info(f"hzg:sglang EAGLE_WORKER draft model_runner.update_weights_from_tensor completed, tp_rank={self.tp_rank}, success={success}")
         if not success:
             return success, message
 
+        # Synchronize to ensure all CUDA operations complete before target worker update
+        logger.info(f"hzg:sglang EAGLE_WORKER torch.cuda.synchronize, tp_rank={self.tp_rank}")
+        torch.cuda.synchronize()
+        logger.info(f"hzg:sglang EAGLE_WORKER torch.cuda.synchronize completed, tp_rank={self.tp_rank}")
+
+        # Deserialize again for target worker to ensure clean data
+        logger.info(f"hzg:sglang EAGLE_WORKER deserialize target_named_tensors, tp_rank={self.tp_rank}")
+        target_named_tensors = MultiprocessingSerializer.deserialize(
+            recv_req.serialized_named_tensors[self.tp_rank]
+        )
+        logger.info(f"hzg:sglang EAGLE_WORKER call target model_runner.update_weights_from_tensor, tp_rank={self.tp_rank}")
         success, message = self.target_worker.model_runner.update_weights_from_tensor(
-            named_tensors=named_tensors,
+            named_tensors=target_named_tensors,
             load_format=recv_req.load_format,
         )
+        logger.info(f"hzg:sglang EAGLE_WORKER target model_runner.update_weights_from_tensor completed, tp_rank={self.tp_rank}, success={success}")
         return success, message
 
 

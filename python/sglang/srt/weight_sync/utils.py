@@ -2,13 +2,12 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
-from torch.distributed.device_mesh import DeviceMesh
-from torch.distributed.tensor import DTensor
-
 from sglang.srt.entrypoints.engine import Engine
 from sglang.srt.managers.io_struct import UpdateWeightsFromTensorReqInput
 from sglang.srt.model_executor.model_runner import LocalSerializedTensor
 from sglang.srt.utils import MultiprocessingSerializer
+from torch.distributed.device_mesh import DeviceMesh
+from torch.distributed.tensor import DTensor
 
 
 async def update_weights(
@@ -36,6 +35,8 @@ async def update_weights(
     from sglang.srt.utils.patch_torch import monkey_patch_torch_reductions
 
     monkey_patch_torch_reductions()
+    for name, tensor in params_batch:
+        print(f"hzg:sglang update_weights {name} {tensor.shape}")
 
     # [
     #   (name0, ipc_tensor0_tp0),
@@ -60,12 +61,15 @@ async def update_weights(
     #   [ (name0, ipc_tensor0_tp0), (name1, ipc_tensor1_tp0) ],
     #   [ (name0, ipc_tensor0_tp1), (name1, ipc_tensor1_tp1) ],
     # ]
+    print(f"hzg:sglang update_weights tag 1")
+
     dist.gather_object(
         obj=named_tensors_batch,
         object_gather_list=gathered_serialized_batches,
         dst=device_mesh[device_mesh_key].mesh.tolist()[0],
         group=device_mesh[device_mesh_key].get_group(),
     )
+    print(f"hzg:sglang update_weights tag 2")
 
     if infer_tp_rank == 0:
         # Use zip(*) to "transpose" the data structure.
@@ -90,6 +94,8 @@ async def update_weights(
             for tensor_group in logical_tensors
         ]
 
+        print(f"hzg:sglang update_weights tag 3")
+
         update_weights_request = UpdateWeightsFromTensorReqInput(
             serialized_named_tensors=[
                 MultiprocessingSerializer.serialize(named_tensors)
@@ -97,6 +103,8 @@ async def update_weights(
             ],
             load_format=load_format,
         )
+
+        print(f"hzg:sglang before await engine.update_weights_from_tensor, infer_tp_rank={infer_tp_rank}")
 
         return await engine.update_weights_from_tensor(update_weights_request)
 

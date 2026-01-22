@@ -5,7 +5,7 @@ import traceback
 from typing import TYPE_CHECKING, Tuple
 
 import torch
-
+import torch.distributed as dist
 from sglang.srt.constants import (
     GPU_MEMORY_ALL_TYPES,
     GPU_MEMORY_TYPE_CUDA_GRAPH,
@@ -76,20 +76,33 @@ class SchedulerUpdateWeightsMixin:
                 assert flush_cache_success, "Cache flush failed after updating weights"
         else:
             logger.error(message)
+        # Synchronize to ensure all CUDA operations complete before return
+        torch.cuda.synchronize()
         return UpdateWeightsFromDistributedReqOutput(success, message)
 
     def update_weights_from_tensor(self, recv_req: UpdateWeightsFromTensorReqInput):
         """Update the online model parameter from tensors."""
         worker = self.draft_worker or self.tp_worker
+        tp_rank = dist.get_rank(self.tp_cpu_group) if self.tp_cpu_group is not None else 0
+        logger.info(f"hzg:sglang Scheduler update_weights_from_tensor start, tp_rank={tp_rank}, worker_type={'EAGLEWorker' if self.draft_worker else 'TpModelWorker'}")
         success, message = worker.update_weights_from_tensor(recv_req)
+        logger.info(f"hzg:sglang Scheduler worker.update_weights_from_tensor completed, tp_rank={tp_rank}, success={success}")
         # TODO extract common code b/t update_weights_from_distributed and update_weights_from_tensor later
         if success:
             if recv_req.flush_cache:
+                logger.info(f"hzg:sglang Scheduler flush_cache start, tp_rank={tp_rank}")
                 flush_cache_success = self.flush_cache()
+                logger.info(f"hzg:sglang Scheduler flush_cache completed, tp_rank={tp_rank}, success={flush_cache_success}")
                 assert flush_cache_success, "Cache flush failed after updating weights"
         else:
             logger.error(message)
+        # Synchronize to ensure all CUDA operations complete before barrier
+        logger.info(f"hzg:sglang Scheduler torch.cuda.synchronize start, tp_rank={tp_rank}")
+        torch.cuda.synchronize()
+        logger.info(f"hzg:sglang Scheduler torch.cuda.synchronize completed, tp_rank={tp_rank}")
+        logger.info(f"hzg:sglang Scheduler torch.distributed.barrier start, tp_rank={tp_rank}")
         torch.distributed.barrier(group=self.tp_cpu_group)
+        logger.info(f"hzg:sglang Scheduler torch.distributed.barrier completed, tp_rank={tp_rank}")
         return UpdateWeightsFromTensorReqOutput(success, message)
 
     def update_weights_from_ipc(self, recv_req: UpdateWeightsFromIPCReqInput):
@@ -128,14 +141,30 @@ class SchedulerUpdateWeightsMixin:
             self.flush_cache()
 
         if GPU_MEMORY_TYPE_WEIGHTS in tags:
+            # Save static state for tp_worker
             self.stashed_model_static_state = _export_static_state(
                 self.tp_worker.model_runner.model
             )
+            # Save static state for draft_worker if exists
+            if self.draft_worker is not None:
+                self.stashed_draft_model_static_state = _export_static_state(
+                    self.draft_worker.model_runner.model
+                )
             torch.distributed.barrier(self.tp_cpu_group)
+            # Pause memory for tp_worker
             self.memory_saver_adapter.pause(GPU_MEMORY_TYPE_WEIGHTS)
+            # Pause memory for draft_worker if exists
+            if self.draft_worker is not None:
+                self.draft_worker.model_runner.memory_saver_adapter.pause(
+                    GPU_MEMORY_TYPE_WEIGHTS
+                )
 
         if GPU_MEMORY_TYPE_CUDA_GRAPH in tags:
             self.memory_saver_adapter.pause(GPU_MEMORY_TYPE_CUDA_GRAPH)
+            if self.draft_worker is not None:
+                self.draft_worker.model_runner.memory_saver_adapter.pause(
+                    GPU_MEMORY_TYPE_CUDA_GRAPH
+                )
 
         torch.get_device_module().synchronize()
 
@@ -154,15 +183,33 @@ class SchedulerUpdateWeightsMixin:
 
         if GPU_MEMORY_TYPE_CUDA_GRAPH in tags:
             self.memory_saver_adapter.resume(GPU_MEMORY_TYPE_CUDA_GRAPH)
+            if self.draft_worker is not None:
+                self.draft_worker.model_runner.memory_saver_adapter.resume(
+                    GPU_MEMORY_TYPE_CUDA_GRAPH
+                )
 
         if GPU_MEMORY_TYPE_WEIGHTS in tags:
+            # Resume memory for tp_worker
             self.memory_saver_adapter.resume(GPU_MEMORY_TYPE_WEIGHTS)
+            # Resume memory for draft_worker if exists
+            if self.draft_worker is not None:
+                self.draft_worker.model_runner.memory_saver_adapter.resume(
+                    GPU_MEMORY_TYPE_WEIGHTS
+                )
             torch.distributed.barrier(self.tp_cpu_group)
+            # Restore static state for tp_worker
             _import_static_state(
                 self.tp_worker.model_runner.model,
                 self.stashed_model_static_state,
             )
             del self.stashed_model_static_state
+            # Restore static state for draft_worker if exists
+            if self.draft_worker is not None:
+                _import_static_state(
+                    self.draft_worker.model_runner.model,
+                    self.stashed_draft_model_static_state,
+                )
+                del self.stashed_draft_model_static_state
 
         if GPU_MEMORY_TYPE_KV_CACHE in tags:
             self.memory_saver_adapter.resume(GPU_MEMORY_TYPE_KV_CACHE)

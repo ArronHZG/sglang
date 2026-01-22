@@ -28,8 +28,6 @@ from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.distributed as dist
-from torch import nn
-
 from sglang.srt.configs import (
     FalconH1Config,
     JetNemotronConfig,
@@ -185,6 +183,7 @@ from sglang.srt.weight_sync.tensor_bucket import (
     FlattenedTensorBucket,
     FlattenedTensorMetadata,
 )
+from torch import nn
 
 _is_cuda = is_cuda()
 _is_hip = is_hip()
@@ -1236,8 +1235,10 @@ class ModelRunner:
         load_format: Optional[str] = None,
     ):
         monkey_patch_torch_reductions()
+        logger.info(f"hzg:sglang ModelRunner.update_weights_from_tensor start, tp_rank={self.tp_rank}, load_format={load_format}, num_tensors={len(named_tensors)}")
         if load_format == "flattened_bucket":
             # Handle flattened bucket format
+            logger.info(f"hzg:sglang ModelRunner._update_weights_from_flattened_bucket, tp_rank={self.tp_rank}")
             return self._update_weights_from_flattened_bucket(
                 flattened_tensor_bucket_dict=named_tensors
             )
@@ -1245,20 +1246,29 @@ class ModelRunner:
         # We need to get device after patch otherwise the device would be wrong
         self.device_module = torch.get_device_module(self.device)
         infered_device = self.device_module.current_device()
+        logger.info(f"hzg:sglang ModelRunner infered_device, tp_rank={self.tp_rank}, device={infered_device}")
 
+        logger.info(f"hzg:sglang ModelRunner unwrap tensors, tp_rank={self.tp_rank}")
         named_tensors = [
             (name, _unwrap_tensor(tensor, tp_rank=self.tp_rank, device=infered_device))
             for name, tensor in named_tensors
         ]
+        logger.info(f"hzg:sglang ModelRunner tensors unwrapped, tp_rank={self.tp_rank}")
+
         if load_format == "direct":
+            logger.info(f"hzg:sglang ModelRunner _model_load_weights_direct, tp_rank={self.tp_rank}")
             _model_load_weights_direct(self.model, named_tensors)
         elif load_format in self.server_args.custom_weight_loader:
+            logger.info(f"hzg:sglang ModelRunner custom weight loader, tp_rank={self.tp_rank}, loader={load_format}")
             custom_loader = dynamic_import(load_format)
             custom_loader(self.model, named_tensors)
         elif load_format is None:
+            logger.info(f"hzg:sglang ModelRunner model.load_weights start, tp_rank={self.tp_rank}, num_params={len(named_tensors)}")
             self.model.load_weights(named_tensors)
+            logger.info(f"hzg:sglang ModelRunner model.load_weights completed, tp_rank={self.tp_rank}")
         else:
             raise NotImplementedError(f"Unknown load_format={load_format}")
+        logger.info(f"hzg:sglang ModelRunner.update_weights_from_tensor completed, tp_rank={self.tp_rank}")
         return True, "Success"
 
     def _update_weights_from_flattened_bucket(

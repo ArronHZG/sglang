@@ -3,9 +3,6 @@
 from typing import Iterable, Optional, Tuple
 
 import torch
-from torch import nn
-from transformers import PretrainedConfig
-
 from sglang.srt.distributed import get_tensor_model_parallel_world_size
 from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.layers.logits_processor import LogitsProcessor
@@ -17,6 +14,9 @@ from sglang.srt.layers.vocab_parallel_embedding import (
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.model_loader.weight_utils import default_weight_loader
 from sglang.srt.models.qwen2 import Qwen2DecoderLayer
+from torch import nn
+
+from transformers import PretrainedConfig
 
 
 class MiMoMultiTokenPredictorLayer(nn.Module):
@@ -116,6 +116,15 @@ class MiMoMTP(nn.Module):
         )
 
     def load_weights(self, weights: Iterable[Tuple[str, torch.Tensor]]):
+        import logging
+        logger = logging.getLogger(__name__)
+
+        from sglang.srt.distributed import get_tensor_model_parallel_rank
+        tp_rank = get_tensor_model_parallel_rank()
+
+        weights_list = list(weights)
+        logger.info(f"hzg:sglang MiMoMTP.load_weights start, tp_rank={tp_rank}, num_weights={len(weights_list)}")
+
         stacked_params_mapping = [
             # (param_name, shard_name, shard_id)
             ("qkv_proj", "q_proj", "q"),
@@ -126,7 +135,11 @@ class MiMoMTP(nn.Module):
         ]
 
         params_dict = dict(self.named_parameters())
+        count = 0
         for name, loaded_weight in weights:
+            count += 1
+            if count % 100 == 0:
+                logger.info(f"hzg:sglang MiMoMTP.load_weights progress, tp_rank={tp_rank}, processed={count}/{len(weights_list)}")
             if "rotary_emb.inv_freq" in name or "projector" in name:
                 continue
             if "rotary_emb.cos_cached" in name or "rotary_emb.sin_cached" in name:
