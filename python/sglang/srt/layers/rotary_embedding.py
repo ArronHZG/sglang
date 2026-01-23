@@ -136,9 +136,7 @@ class RotaryEmbedding(CustomOp):
 
         if get_global_server_args().rl_on_policy_target is not None:
             self._forward_method = self.forward_native
-            self._apply_rotary_emb_wrapped = torch.compile(dynamic=True)(
-                self._apply_rotary_emb_wrapped
-            )
+
         self.position_cos, self.position_sin = None, None
 
     def _compute_inv_freq(self, base: Union[int, float]) -> torch.Tensor:
@@ -1556,6 +1554,9 @@ class MRotaryEmbedding(RotaryEmbedding):
         query: torch.Tensor,
         key: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        assert (
+            fused_set_kv_buffer_arg is None
+        ), "fused_set_kv_buffer_arg is not supported for npu implementation"
         # TODO: remove this when npu_mrope supports QNumHeads * QHeadSize > 4096
         if query.shape[1] > 4096:
             return self._forward_native(positions, query, key)
