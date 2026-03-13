@@ -61,14 +61,18 @@ def get_server_gpu_memory(pid=None):
         if pid is not None:
             # Query specific PID
             result = subprocess.run(
-                ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=pid,used_memory",
+                    "--format=csv,noheader,nounits",
+                ],
                 capture_output=True,
-                text=True
+                text=True,
             )
             if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split('\n')
+                lines = result.stdout.strip().split("\n")
                 for line in lines:
-                    parts = line.split(',')
+                    parts = line.split(",")
                     if len(parts) >= 2:
                         line_pid = parts[0].strip()
                         if int(line_pid) == pid:
@@ -78,14 +82,18 @@ def get_server_gpu_memory(pid=None):
         else:
             # Get the first process's memory
             result = subprocess.run(
-                ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=pid,used_memory",
+                    "--format=csv,noheader,nounits",
+                ],
                 capture_output=True,
-                text=True
+                text=True,
             )
             if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split('\n')
+                lines = result.stdout.strip().split("\n")
                 if lines:
-                    parts = lines[0].split(',')
+                    parts = lines[0].split(",")
                     if len(parts) >= 2:
                         line_pid = parts[0].strip()
                         memory_mb = int(parts[1].strip())
@@ -189,7 +197,9 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
         # Step 1: Record initial server memory using nvidia-smi
         memory_initial, server_pid = get_server_gpu_memory()
         if memory_initial is not None:
-            print(f"\n[Step 1] Initial server memory (PID {server_pid}): {memory_initial / 1024 ** 2:.2f} MB")
+            print(
+                f"\n[Step 1] Initial server memory (PID {server_pid}): {memory_initial / 1024 ** 2:.2f} MB"
+            )
         else:
             print(f"\n[Step 1] Warning: Could not get server memory via nvidia-smi")
             memory_initial = 0
@@ -201,7 +211,7 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
                 trust_remote_code=True,
                 torch_dtype=torch.float16,
                 device_map="cpu",
-                local_files_only=True
+                local_files_only=True,
             )
 
             all_params = get_all_updatable_params(model)
@@ -263,14 +273,16 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
             failed_batches = 0
 
             for i in range(0, len(named_tensors), batch_size):
-                batch = named_tensors[i:i + batch_size]
+                batch = named_tensors[i : i + batch_size]
                 try:
                     ret = self.run_update_weights(batch, flush_cache=True)
                     if ret.get("success"):
                         successful_batches += 1
                     else:
                         failed_batches += 1
-                        print(f"  Batch {i // batch_size + 1} failed: {ret.get('message', 'Unknown error')}")
+                        print(
+                            f"  Batch {i // batch_size + 1} failed: {ret.get('message', 'Unknown error')}"
+                        )
                 except Exception as e:
                     failed_batches += 1
                     print(f"  Batch {i // batch_size + 1} error: {e}")
@@ -291,7 +303,9 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
             else:
                 memory_after_update, _ = get_server_gpu_memory()
             if memory_after_update is not None:
-                print(f"  Server (PID {server_pid}) memory after update: {memory_after_update / 1024 ** 2:.2f} MB")
+                print(
+                    f"  Server (PID {server_pid}) memory after update: {memory_after_update / 1024 ** 2:.2f} MB"
+                )
             else:
                 print(f"  Warning: Could not get server memory via nvidia-smi")
                 memory_after_update = memory_initial
@@ -303,7 +317,9 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
             print("MEMORY LEAK TEST RESULTS (via nvidia-smi)")
             print("=" * 80)
             print(f"  Initial server memory: {memory_initial / 1024 ** 2:.2f} MB")
-            print(f"  Server memory after update: {memory_after_update / 1024 ** 2:.2f} MB")
+            print(
+                f"  Server memory after update: {memory_after_update / 1024 ** 2:.2f} MB"
+            )
             print(f"  Memory increase (leak check): {memory_leak / 1024 ** 2:.2f} MB")
             print("=" * 80)
 
@@ -326,13 +342,16 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
                 memory_leak,
                 leak_threshold,
                 f"Memory leak detected: {memory_leak / 1024 ** 2:.2f} MB increase "
-                f"(threshold: {leak_threshold / 1024 ** 2:.2f} MB)"
+                f"(threshold: {leak_threshold / 1024 ** 2:.2f} MB)",
             )
-            print(f"\n Memory leak test PASSED (leak: {memory_leak / 1024 ** 2:.2f} MB < {leak_threshold / 1024 ** 2:.2f} MB)")
+            print(
+                f"\n Memory leak test PASSED (leak: {memory_leak / 1024 ** 2:.2f} MB < {leak_threshold / 1024 ** 2:.2f} MB)"
+            )
 
         except Exception as e:
             print(f"Error in full model update test: {e}")
             import traceback
+
             traceback.print_exc()
             raise
 
