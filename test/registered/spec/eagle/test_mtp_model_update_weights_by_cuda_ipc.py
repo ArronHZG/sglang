@@ -40,12 +40,15 @@ import torch
 from transformers import AutoModelForCausalLM
 
 from sglang.srt.utils import MultiprocessingSerializer, kill_process_tree
+from sglang.test.ci.ci_register import register_cuda_ci
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
     DEFAULT_URL_FOR_TEST,
     CustomTestCase,
     popen_launch_server,
 )
+
+register_cuda_ci(est_time=120, suite="stage-b-test-small-1-gpu")
 
 DEFAULT_SMALL_MODEL_NAME_FOR_TEST = "XiaomiMiMo/MiMo-7B-RL"
 
