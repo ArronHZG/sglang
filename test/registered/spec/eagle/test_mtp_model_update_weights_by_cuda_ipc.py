@@ -214,7 +214,6 @@ class TestMTPMemoryLeakWithIPC(CustomTestCase):
                 trust_remote_code=True,
                 torch_dtype=torch.float16,
                 device_map="cpu",
-                local_files_only=True,
             )
 
             all_params = get_all_updatable_params(model)
