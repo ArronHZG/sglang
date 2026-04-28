@@ -17,13 +17,18 @@ on:
         required: false
         type: string
         default: ''
+      skip_stage_health_check:
+        required: false
+        type: boolean
+        default: false
 
 # Workflow-level env is NOT inherited from the caller in reusable workflows.
 # The github context (including github.event_name) IS inherited from the caller.
 env:
   SGLANG_IS_IN_CI: true
   SGLANG_CUDA_COREDUMP: "1"
-  SGLANG_PR_TEST_BYPASS_MAINTENANCE_ON_MAIN: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+  PR_TEST_BYPASS_MAINTENANCE_ON_MAIN: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+  SKIP_STAGE_HEALTH_CHECK: ${{ inputs.skip_stage_health_check == true && 'true' || 'false' }}
 
 jobs:
   sgl-kernel-unit-test:
@@ -35,11 +40,8 @@ jobs:
           ref: ${{ inputs.pr_head_sha || inputs.git_ref || github.sha }}
 
       - uses: ./.github/actions/check-stage-health
-        id: stage-health
 
       - uses: ./.github/actions/check-maintenance
-        with:
-          github-token: ${{ github.token }}
 
       - name: Cleanup
         run: |
@@ -51,7 +53,7 @@ jobs:
         with:
           path: sgl-kernel/dist/
           merge-multiple: true
-          pattern: wheel-python3.10-cuda12.9
+          pattern: wheel-python3.10-cuda*
 
       - name: Install dependencies
         timeout-minutes: 20
@@ -73,11 +75,8 @@ jobs:
           ref: ${{ inputs.pr_head_sha || inputs.git_ref || github.sha }}
 
       - uses: ./.github/actions/check-stage-health
-        id: stage-health
 
       - uses: ./.github/actions/check-maintenance
-        with:
-          github-token: ${{ github.token }}
 
       - name: Cleanup
         run: |
@@ -89,7 +88,7 @@ jobs:
         with:
           path: sgl-kernel/dist/
           merge-multiple: true
-          pattern: wheel-python3.10-cuda12.9
+          pattern: wheel-python3.10-cuda*
 
       - name: Install dependencies
         timeout-minutes: 20
@@ -111,11 +110,8 @@ jobs:
           ref: ${{ inputs.pr_head_sha || inputs.git_ref || github.sha }}
 
       - uses: ./.github/actions/check-stage-health
-        id: stage-health
 
       - uses: ./.github/actions/check-maintenance
-        with:
-          github-token: ${{ github.token }}
 
       - name: Cleanup
         run: |
@@ -127,7 +123,7 @@ jobs:
         with:
           path: sgl-kernel/dist/
           merge-multiple: true
-          pattern: wheel-python3.10-cuda12.9
+          pattern: wheel-python3.10-cuda*
 
       - name: Install dependencies
         timeout-minutes: 20
@@ -161,11 +157,8 @@ jobs:
           ref: ${{ inputs.pr_head_sha || inputs.git_ref || github.sha }}
 
       - uses: ./.github/actions/check-stage-health
-        id: stage-health
 
       - uses: ./.github/actions/check-maintenance
-        with:
-          github-token: ${{ github.token }}
 
       - name: Cleanup
         run: |
@@ -177,7 +170,7 @@ jobs:
         with:
           path: sgl-kernel/dist/
           merge-multiple: true
-          pattern: wheel-python3.10-cuda12.9
+          pattern: wheel-python3.10-cuda*
 
       - name: Install dependencies
         timeout-minutes: 20
@@ -190,9 +183,9 @@ jobs:
           cd sgl-kernel
           pytest tests/
 
-  # Adding a single CUDA13 smoke test to verify that the kernel builds and runs
+  # Adding a single CUDA13 build-and-run check for the kernel
   # TODO: Add back this test when it can pass on CI
-  # cuda13-kernel-smoke-test:
+  # cuda13-kernel-build-check:
   #   if: inputs.sgl_kernel == 'true'
   #   runs-on: x64-cu13-kernel-tests
   #   steps:
@@ -208,7 +201,7 @@ jobs:
   #       with:
   #         path: sgl-kernel/dist/
   #         merge-multiple: true
-  #         pattern: wheel-python3.10-cuda13.0
+  #         pattern: wheel-python3.10-cuda*
 
   #     - name: Install dependencies
   #       run: |
